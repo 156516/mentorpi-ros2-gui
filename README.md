@@ -7,7 +7,7 @@
 速度、激光、里程计、地图、代价地图、粒子云、导航 action、SLAM/导航服务，全部走 ROS2
 话题 / 服务 / action，**不需要 SSH 隧道，也不需要 rosbridge**（同网段直连）。
 
-> 本项目是 ROS1 Noetic + Qt5 版本（`robot_control_gui-master`）的 ROS2 复刻，
+> 本项目是上游 ROS1 Noetic + Qt5 版本（`robot_control_gui-master`）的 ROS2 复刻，
 > 面向 ROS2 Humble + Nav2 + slam_toolbox 技术栈。
 
 ---
@@ -105,7 +105,6 @@ robot_control_gui_ros2/
 │   ├── launch/                   ros2 launch 入口
 │   └── test/                     2 组 gtest（纯 C++，无需 ROS 运行时）
 │
-├── src/robot_control_gui_jazzy/  ← 同源 Jazzy 变体（遗留，不推荐直连 Humble 车）
 ├── slam_controller_ws/src/       小车端：SLAM 起停服务（rclpy）
 ├── nav_controller_ws/src/        小车端：Nav2 参数/算法管理（rclpy）
 ├── robots/mentorpi.yaml          机器人配置档（换车不改代码）
@@ -128,6 +127,9 @@ Jazzy 侧发出的数据小车解析不了，**每次重连会把底盘状态机
 
 解决方案：把整个 GUI 编进 `osrf/ros:humble-desktop` 容器里运行，**两侧 distro 完全一致**。
 实测（2026-10-04）**断线重连完全正常**，不再需要冷启小车。
+
+> 早期的 Jazzy 本地直连变体（`src/robot_control_gui_jazzy`）以及它的构建产物
+> （`build/`、`install/`、`log/`）已一并移除，现在只保留 Humble 容器这条主线。
 
 - `Dockerfile.humble` 只 copy `ros2_ws_humble/` 源码，`colcon build` 后把 install 目录
   落到镜像里的 `/opt/robot_control_gui_humble`。
