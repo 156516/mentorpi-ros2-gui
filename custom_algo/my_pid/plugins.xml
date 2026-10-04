@@ -1,0 +1,6 @@
+<library path="my_pid">
+  <class name="my_pid/MyPid" type="my_pid::MyPid"
+         base_class_type="nav2_core::Controller">
+    <description>PID 路径跟踪控制器</description>
+  </class>
+</library>

@@ -1,0 +1,29 @@
+# 机器人配置档 —— mentorpi(当前这台)
+# 加新车:复制这个文件改名,改里面的值,重启 GUI 就能在下拉里选到。不用改代码。
+name: MentorPi (默认)
+robot_ip: 192.168.149.1
+
+# ---- 话题名 ----
+cmd_vel:  /controller/cmd_vel      # 底盘吃的速度话题
+scan:     /scan_raw                # 雷达(mentorpi 不做 laser_filters,只有 raw)
+odom:     /odom
+map:      /map
+plan:     /plan
+battery:  /ros_robot_controller/battery
+
+# ---- 电池消息类型 ----
+#   uint16          = std_msgs/UInt16,值 = 百分比 x100(mentorpi 就是这样)
+#   battery_state   = sensor_msgs/BatteryState,标准类型
+battery_type: uint16
+
+# ---- 坐标系 ----
+map_frame:  map
+odom_frame: odom
+base_frame: base_footprint         # 有的车叫 base_link
+lidar_frame: lidar_frame
+
+# ---- 能力开关 ----
+has_nav2: true                     # 有没有 Nav2(/navigate_to_pose 等)
+has_slam_controller: true          # 小车端有没有 slam_controller 节点
+has_camera: true                   # 有没有相机话题
+camera_topic: /ascamera/camera_publisher/rgb0/image_compressed

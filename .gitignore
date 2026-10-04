@@ -1,0 +1,18 @@
+# colcon / build artifacts
+build/
+install/
+log/
+*.built_by
+
+# container HOME (QSettings / ROS logs)
+.gui_home/
+
+# python
+__pycache__/
+*.py[cod]
+
+# editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store

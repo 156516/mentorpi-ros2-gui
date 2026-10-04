@@ -1,0 +1,6 @@
+<library path="my_aster">
+  <class name="my_aster/MyPlanner" type="my_aster::MyPlanner"
+         base_class_type="nav2_core::GlobalPlanner">
+    <description>自定义全局规划器</description>
+  </class>
+</library>

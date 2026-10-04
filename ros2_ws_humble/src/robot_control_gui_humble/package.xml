@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<?xml-model
+  href="http://download.ros.org/schema/package_format3.xsd"
+  schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>robot_control_gui_humble</name>
+  <version>0.1.0</version>
+  <description>
+    ROS2 Humble + Qt5 control GUI for mentorpi robot.
+    Re-implementation of the ROS1 Noetic + Qt5 project "robot_control_gui",
+    adapted to DDS-direct, Nav2 stack (controller/cmd_vel, slam_toolbox, nav2),
+    and self-painted QGraphicsView (no embedded RViz).
+
+    Humble version - same source tree as the Jazzy variant but compiled
+    against ros-humble-* packages and intended to run inside a Humble
+    Docker container so it can talk to mentorpi's Humble bringup without
+    the Fast CDR cross-LTS discovery issues we saw running Jazzy directly.
+  </description>
+  <maintainer email="robot@example.com">robot</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- ROS2 core client libs -->
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>rclcpp_components</depend>
+
+  <!-- Standard message types we use directly -->
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+
+  <!-- Navigation 2 stack action / map server interfaces -->
+  <depend>nav2_msgs</depend>
+  <depend>rcl_interfaces</depend>
+  <depend>nav2_map_server</depend>
+
+  <!-- ros2 run / launch service to spawn mapping nodes remotely -->
+  <depend>ros2launch</depend>
+
+  <!-- Qt 5 (system) -->
+  <depend>qtbase5-dev</depend>
+  <depend>qttools5-dev</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

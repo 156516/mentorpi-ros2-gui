@@ -1,0 +1,22 @@
+# 新机器人模板 —— 复制成 <你的车>.yaml 改值即可(不用改 GUI 代码)
+name: 我的小车
+robot_ip: 192.168.1.50
+
+cmd_vel:  /cmd_vel                 # 大多数车用 /cmd_vel
+scan:     /scan                    # 大多数车用 /scan
+odom:     /odom
+map:      /map
+plan:     /plan
+battery:  /battery_state
+
+battery_type: battery_state        # battery_state = sensor_msgs/BatteryState
+
+map_frame:  map
+odom_frame: odom
+base_frame: base_link              # 多数车是 base_link
+lidar_frame: laser_frame
+
+has_nav2: true
+has_slam_controller: false         # 没有小车端 slam_controller 就写 false
+has_camera: false
+camera_topic: ""

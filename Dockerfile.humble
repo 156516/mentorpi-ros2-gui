@@ -1,0 +1,83 @@
+# robot_control_gui_jazzy (Humble variant) Docker image
+#
+# Builds the entire workspace inside the osrf/ros:humble-desktop image so
+# the resulting container is fully Humble — talking to a Humble mentorpi
+# bringup without the Fast CDR cross-LTS issue we hit running Jazzy
+# directly on the PC.
+#
+# Build:
+#   docker build -f Dockerfile.humble -t robot_control_gui_humble:latest .
+# Run (interactive, window visible on host via X11):
+#   xhost +local:docker
+#   docker run -it --rm --net=host \
+#     -e DISPLAY=$DISPLAY \
+#     -v /tmp/.X11-unix:/tmp/.X11-unix \
+#     -v ~/.Xauthority:/root/.Xauthority:ro \
+#     robot_control_gui_humble:latest
+
+FROM osrf/ros:humble-desktop
+
+# Avoid apt-get prompts during build.
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Qt5 + our GUI deps + slam_toolbox + map_server.
+# (sensor_msgs / nav_msgs etc. come from ros-humble-desktop already.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      qtbase5-dev \
+      qttools5-dev \
+      libqt5opengl5-dev \
+      libqt5multimedia5-plugins \
+      libqt5serialport5-dev \
+      libqt5network5 \
+      libqt5svg5 \
+      libqt5websockets5 \
+      ros-humble-rclcpp \
+      ros-humble-rclcpp-action \
+      ros-humble-rclcpp-components \
+      ros-humble-tf2-ros \
+      ros-humble-tf2-geometry-msgs \
+      ros-humble-cv-bridge \
+      ros-humble-nav2-msgs \
+      ros-humble-nav2-map-server \
+      ros-humble-nav2-bringup \
+      ros-humble-rmw-fastrtps-cpp \
+      python3-colcon-common-extensions \
+      x11-apps \
+      fonts-noto-cjk \
+      fonts-noto-color-emoji \
+    && rm -rf /var/lib/apt/lists/*
+
+# Workspace
+ENV WORKSPACE=/ws
+WORKDIR $WORKSPACE
+RUN mkdir -p src
+
+# Copy the package source tree into the image.
+COPY ros2_ws_humble/src/robot_control_gui_humble $WORKSPACE/src/robot_control_gui_humble
+
+# Build with default layout first (writes to <workspace>/install).
+RUN /bin/bash -c 'source /opt/ros/humble/setup.bash && \
+    cd $WORKSPACE && \
+    colcon build --merge-install \
+          --packages-select robot_control_gui_humble'
+
+# Re-layout: copy build output to /opt/robot_control_gui_humble.
+RUN mkdir -p /opt/robot_control_gui_humble && \
+    cp -r /ws/install/. /opt/robot_control_gui_humble/ && \
+    rm -rf /ws/install /ws/build /ws/log /ws/src
+
+# Verification step (informational; if no robot_control_gui_humble_node
+# binary is installed the build itself failed).
+RUN ls -la /opt/robot_control_gui_humble/lib/robot_control_gui_humble/ 2>&1 || true
+
+# Default ROS env (Humble) + workspace overlay
+ENV ROS_DOMAIN_ID=0
+ENV ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
+
+# Source the workspace overlay in any shell we enter.
+RUN echo 'source /opt/ros/humble/setup.bash && source /opt/robot_control_gui_humble/setup.bash' >> ~/.bashrc
+
+# Entrypoint runs whatever the user asks (default: bash shell so
+# `docker run -it ...` is a nice dev env).
+ENTRYPOINT ["/bin/bash", "-c"]
+CMD ["source /opt/ros/humble/setup.bash && source /opt/robot_control_gui_humble/setup.bash && exec bash"]

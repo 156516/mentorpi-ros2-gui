@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>my_pid</name>
+  <version>0.0.1</version>
+  <description>自定义 Nav2 路径跟踪控制器插件(PID)</description>
+  <maintainer email="me@example.com">me</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend><depend>rclcpp_lifecycle</depend>
+  <depend>nav2_core</depend><depend>nav2_costmap_2d</depend>
+  <depend>nav_msgs</depend><depend>geometry_msgs</depend><depend>pluginlib</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>
