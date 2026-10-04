@@ -32,7 +32,10 @@ MjpegStream::MjpegStream(QWidget* parent)
   l->setContentsMargins(0, 0, 0, 0);
 
   d_->view = new QLabel(this);
-  d_->view->setMinimumSize(320, 240);
+  // 最小宽度别太大:控制页是 摇杆160 + 仪表180 + 摄像头 并排,摄像头这一项
+  // 直接决定该页的最小宽度。320 时整页 762px,刚好超出页签区视口(760)导致
+  // 一直挂着横向滚动条;280 留出余量。
+  d_->view->setMinimumSize(280, 210);
   d_->view->setAlignment(Qt::AlignCenter);
   d_->view->setStyleSheet("background:#222;color:#aaa;");
   d_->view->setText(tr("(未连接摄像头)"));

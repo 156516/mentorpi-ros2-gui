@@ -6,6 +6,21 @@
 #include <QTabWidget>
 #include <QScrollArea>
 #include <QFrame>
+#include <QTimer>
+#include <QDebug>
+
+namespace {
+// 调试:设 RCJ_DUMP_LAYOUT=1 启动时打印控件树+几何,用于排查布局问题。
+void rcjDumpTree(QWidget* w, int depth) {
+  if (!w) return;
+  qDebug().noquote() << QString(depth * 2, ' ')
+                     << QString::fromLatin1(w->metaObject()->className())
+                     << (w->objectName().isEmpty() ? QString("-") : w->objectName())
+                     << w->geometry();
+  for (auto* c : w->children())
+    if (auto* cw = qobject_cast<QWidget*>(c)) rcjDumpTree(cw, depth + 1);
+}
+}  // namespace
 #include <QDockWidget>
 #include <QToolBar>
 #include <QAction>
@@ -291,11 +306,20 @@ void MainWindow::setupUi() {
   left_lay->addWidget(tabs_, 1);
   left_lay->addWidget(footer_dashboard_);
 
-  cp_lay->addWidget(left_col, 1);
+  // 页签区 : 地图视图 = 3 : 2。控制页三个分组框(摇杆 160 + 仪表 180 + 摄像头 320)
+  // 并排最少要 ~750px,按 1:2 分只给 ~425px,页面会一直挂着横向滚动条。
+  cp_lay->addWidget(left_col, 3);
   cp_lay->addWidget(new QWidget(connected_page), 2);  // view placeholder
   body_stack_->addWidget(connected_page);
 
   setCentralWidget(body_stack_);
+
+  if (!qEnvironmentVariable("RCJ_DUMP_LAYOUT").isEmpty()) {
+    QTimer::singleShot(5000, this, [this]() {
+      qDebug() << "==== LAYOUT DUMP ====";
+      rcjDumpTree(this, 0);
+    });
+  }
 
   // --- Wire up buttons (always live, no ROS) ---
   connect(connect_btn_, &QPushButton::clicked, this, &MainWindow::onConnectClicked);
