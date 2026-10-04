@@ -4,6 +4,8 @@
 #include <cmath>
 
 #include <QTabWidget>
+#include <QScrollArea>
+#include <QFrame>
 #include <QDockWidget>
 #include <QToolBar>
 #include <QAction>
@@ -379,13 +381,24 @@ void MainWindow::onConnectClicked() {
   // 「遥控」页已删除:它的方向键功能和控制页的摇杆/WASD 完全重复。
   map_edit_panel_ = std::make_unique<MapEditPanel>(controller_, view_.get(), tabs_);
   log_panel_      = std::make_unique<LogPanel>(controller_, tabs_);
-  tabs_->addTab(control_panel_.get(),  tr("控制"));
-  tabs_->addTab(nav_panel_.get(),      tr("导航"));
-  tabs_->addTab(mapping_panel_.get(),  tr("建图"));
-  tabs_->addTab(map_edit_panel_.get(), tr("地图编辑"));
-  tabs_->addTab(log_panel_.get(),      tr("日志"));
-  tabs_->addTab(status_panel_.get(),   tr("状态"));
-  tabs_->addTab(settings_panel_.get(), tr("设置"));
+  // 每个页面外面套一层 QScrollArea。页面本身很高(导航页纵向堆了
+  // "怎么导航"/状态/导航参数/代价地图 约 830px),直接放进 QTabWidget 会把
+  // 主窗口的 minimum size 顶到 1063px —— 超过 1080p 屏的可视高度,窗口
+  // 底部被截、也没法再缩小或最大化。套上滚动区后页面可被压缩,超出时出滚动条。
+  auto scrollable = [this](QWidget* page) {
+    auto* sa = new QScrollArea(tabs_);
+    sa->setWidgetResizable(true);              // 视口比页面大时页面跟着撑满
+    sa->setFrameShape(QFrame::NoFrame);
+    sa->setWidget(page);                       // 接管 page 的父子关系
+    return sa;
+  };
+  tabs_->addTab(scrollable(control_panel_.get()),  tr("控制"));
+  tabs_->addTab(scrollable(nav_panel_.get()),      tr("导航"));
+  tabs_->addTab(scrollable(mapping_panel_.get()),  tr("建图"));
+  tabs_->addTab(scrollable(map_edit_panel_.get()), tr("地图编辑"));
+  tabs_->addTab(scrollable(log_panel_.get()),      tr("日志"));
+  tabs_->addTab(scrollable(status_panel_.get()),   tr("状态"));
+  tabs_->addTab(scrollable(settings_panel_.get()), tr("设置"));
 
   // 地图编辑期间冻结实时 /map
   connect(map_edit_panel_.get(), &MapEditPanel::editModeChanged, this,
