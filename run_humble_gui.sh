@@ -36,6 +36,8 @@ docker run -d --name "$NAME" --net=host \
   -v "$HERE/.gui_home:/gui_home:rw" \
   -v "$HERE/robots:/robots:ro" \
   -e RCJ_ROBOTS_DIR=/robots \
+  -e RCJ_AUTOCONNECT_IP="${RCJ_AUTOCONNECT_IP:-}" \
+  -e RCJ_SHOW_HELP="${RCJ_SHOW_HELP:-}" \
   "$IMG" \
   "source /opt/ros/humble/setup.bash && source /opt/robot_control_gui_humble/setup.bash && exec ros2 run robot_control_gui_humble robot_control_gui_humble_node" >/dev/null
 echo "[gui] 容器 $NAME 已起"

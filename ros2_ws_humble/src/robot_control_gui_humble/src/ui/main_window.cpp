@@ -93,7 +93,7 @@ void MainWindow::showHelp() {
   带 <b>*</b> 的(如 map_update_interval / resolution / max_laser_range /
   transform_publish_period)slam_toolbox <b>只在启动时读</b>,必须点 <b>应用并重启 SLAM</b>;
   没带 * 的(如 minimum_travel_distance)可点 <b>应用(动态)</b> 即时生效。</li>
-<li><b>Save map</b> 一栏是让<b>小车端</b>存图(需要小车上有 map_saver);要自己编辑/带走地图请用下面的「地图编辑」页。</li>
+<li><b>Save map</b> 把当前地图存成 <code>&lt;名字&gt;.pgm</code> + <code>.yaml</code> 到 <b>PC 的</b> <code>maps/</code> 目录(路径填 <code>/maps/名字</code>)。想继续编辑用下面的「地图编辑」页;想拿去导航,在「导航页」点上传给小车。</li>
 </ul>
 
 <h3>⑤ 地图编辑页(改建好的图)</h3>
@@ -109,11 +109,25 @@ void MainWindow::showHelp() {
 </ul>
 
 <h3>⑥ 导航页</h3>
-<ul><li>需要小车端先起 Nav2(bringup + AMCL)。之后在地图上左键点目标点即可下发。</li></ul>
+<ul>
+<li>先确认小车端起了 Nav2 —— 点 <b>应用并重启导航</b>(需先有地图:用刚建的图点「📤 上传当前地图给小车」,或用小车上的图把路径留空)。等 10~20 秒。</li>
+<li><b>设初始位姿(关键)</b>:点 <b>📍 用当前位置设为初始位姿</b>,或在地图上 <b>Shift+左键</b> 点小车实际位置。<b>不设的话定位是散的,车不会动</b>。</li>
+<li>看 <b>粒子云</b> 判断准不准:聚成一小团 = 准,散开 = 不准,跑到别处 = 收错了 → 重设。</li>
+<li>地图上 <b>左键按住拖动</b>(拖的方向 = 目标朝向)→ 出现绿点 + 绿箭头 → 点 <b>▶ 开始导航</b> 车才走。</li>
+<li>看状态:导航中 / 已到达 / 失败,剩余距离实时刷新;中断点 <b>✗ 取消导航</b>。</li>
+<li>本页还有:<b>代价地图开关</b>(全局/局部)、<b>粒子云开关</b>、<b>🔧 算法参数</b>(查询/修改)、规划器/控制器下拉。</li>
+</ul>
+
+<h3>⑦ 日志页</h3>
+<ul>
+<li>汇总小车 <code>/rosout</code> 与 GUI 自身事件,可按 <b>分类</b>(定位/导航/建图/参数/位姿/传感器/GUI)和
+    <b>级别</b> 筛选;位姿每 2 秒记一条。</li>
+<li>按时间段 <b>💾 导出</b> CSV。</li>
+</ul>
 
 
 
-<h3>⑩ 自定义算法(全局规划器 / 路径跟踪控制器)</h3>
+<h3>⑧ 自定义算法(全局规划器 / 路径跟踪控制器)</h3>
 <ul>
 <li><b>①</b> 导航页 → <b>➕ 添加自定义算法</b> → 选类型(全局规划器/控制器)+ 起名(小写字母/数字/下划线)<br>
     → 模板生成到 <code>custom_algo/&lt;名字&gt;/</code></li>
@@ -128,10 +142,10 @@ void MainWindow::showHelp() {
 <li><b>改已有算法</b>:重复 ②③,再点「应用并重启导航」—— <b>Nav2 重启才会加载新的 .so</b>,这步不能省。</li>
 </ul>
 
-<h3>⑦ 状态 / 设置</h3>
-<ul><li>状态页看 odom / 电池 / IMU;设置页可存小车 IP 与速度上限。</li></ul>
+<h3>⑨ 状态 / 设置</h3>
+<ul><li>状态页看 <b>电池 / WiFi / 里程计(odom)</b>;设置页可存小车 IP、DOMAIN_ID 与速度上限,并能选「机器人配置」换车。</li></ul>
 
-<h3>⑧ SLAM 方法怎么选(建图页的 Method)</h3>
+<h3>⑩ SLAM 方法怎么选(建图页的 Method)</h3>
 <ul>
 <li><b>slam_toolbox</b> — 2D 激光 SLAM,只要激光雷达就能跑,输出栅格地图 <code>/map</code>。<b>mentorpi 用这个</b>(唯一实测可用)。</li>
 <li><b>rtabmap</b> — RGB-D 视觉 SLAM,<b>需要深度相机</b>。mentorpi 只有 2D 雷达 → 启动后收不到数据、建不出图。</li>
@@ -139,7 +153,7 @@ void MainWindow::showHelp() {
 <li><b>cartographer</b> — Google 的 2D/3D SLAM,功能强但配置复杂(要额外的 lua 配置),本车未验证。</li>
 </ul>
 
-<h3>⑨ SLAM 参数各是什么(建图页的 SLAM 参数)</h3>
+<h3>⑪ SLAM 参数各是什么(建图页的 SLAM 参数)</h3>
 <ul>
 <li><b>map_update_interval</b> — 地图刷新间隔(秒)。slam_toolbox 多久把地图重算一遍发到 /map。
     <b>越小地图越跟手,越费小车 CPU</b>;默认 5.0,调到 1.0~2.0 已明显更流畅。<b>需重启</b>。</li>
