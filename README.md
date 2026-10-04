@@ -33,7 +33,7 @@ GUI 分为 **6 个页面**，工具栏提供连接/断开、重置视图、视�
 
 | 页面 | 能力 |
 |---|---|
-| **控制** | 双虚拟摇杆 + 键盘 `W/A/S/D` + 空格急停；速度仪表盘；底盘速度实时下发 |
+| **控制** | 双虚拟摇杆 + 键盘 `W/A/S/D` + 空格急停；速度仪表盘（含横移分量）；底盘速度实时下发；**摄像头实时画面** |
 | **导航** | 地图上拖拽设目标点+朝向 → 开始导航；取消导航；**代价地图**开关（全局/局部，RViz 配色）；**AMCL 粒子云**开关；导航参数面板（规划器/控制器下拉、车半径、膨胀半径、读取/应用并重启）；算法参数查询/修改；📍用当前位置设为初始位姿 |
 | **建图** | slam_toolbox 起停；SLAM 参数面板（5 个常用参数，带 `*` 的需"应用并重启 SLAM"）；Save map 存 PGM+YAML 到 PC |
 | **地图编辑** | 编辑当前图 / 导入 PGM+YAML；补墙·擦除笔刷；撤销重做；另存为 |
@@ -206,6 +206,7 @@ camera_topic: /ascamera/camera_publisher/rgb0/image_compressed
 | 电池 | `/ros_robot_controller/battery` | `std_msgs/UInt16`（毫伏×100），**不是** `BatteryState` |
 | 导航 | `/navigate_to_pose` | Nav2 启动后才有 |
 | 存图 | `/slam_toolbox/save_map` | 注意不是 `/map_saver/save_map` |
+| 摄像头 | `/ascamera/camera_publisher/rgb0/image_compressed` | `sensor_msgs/CompressedImage`，控制页实时显示（也可配 web_video_server HTTP 轮询） |
 
 ---
 
@@ -412,9 +413,6 @@ colcon test-result --verbose
 
 **其它限制**：
 
-- **横向平移（A/D）**：GUI 发 `linear.y`，但 mentorpi 麦轮 holonomic 是否响应取决于底盘
-  驱动配置（当前实测只能前后 + 旋转）。
-- **MJPEG 摄像头**：仅占位，未实现实际拉流。
 - **地图持久化**：保存的路径交给小车端服务，GUI 不自动下载到本地（PC 侧 `maps/` 是
   GUI 另存/导入用的）。
 - **机器人显示位姿**：优先用 TF 的 `map` 帧（`tryGetRobotPoseInMap`），TF 不可用时回退

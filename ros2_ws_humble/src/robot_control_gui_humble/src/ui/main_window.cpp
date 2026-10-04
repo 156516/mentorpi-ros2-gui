@@ -83,7 +83,7 @@ void MainWindow::showHelp() {
 </ul>
 
 <h3>③ 控制页</h3>
-<ul><li>双摇杆 / <b>W A S D</b> 开车,<b>空格</b> 急停。Camera 面板目前是占位(未接摄像头)。</li></ul>
+<ul><li>双摇杆 / <b>W A S D</b> 开车（<b>A/D</b> 横移，麦轮 holonomic）,<b>空格</b> 急停。Camera 面板实时显示车上摄像头画面（ROS 压缩图话题）。</li></ul>
 
 <h3>④ 建图页</h3>
 <ul>
