@@ -63,8 +63,8 @@ PC 关机、ZT 断线都不影响小车**内部**的 ROS 图(odom ↔ ros_robot_
    ```
    (`start_node.sh` 自己会先 `~/.stop_ros.sh` 再重起 bringup,是它的正常重启路径。)
 
-3. 我们自己的三个脚本(`slam_controller.py` / `nav_controller.py` / `cmd_vel_watchdog.py`)
-   **不读 `.typerc`**,靠 `start_robot_services.sh` 里的 `docker exec -e` 传;
+3. 我们自己的四个脚本(`slam_controller.py` / `nav_controller.py` / `cmd_vel_watchdog.py` /
+   `camera_color_relay.py`)**不读 `.typerc`**,靠 `start_robot_services.sh` 里的 `docker exec -e` 传;
    `robot_nav2.sh` 同理。
 
 ### PC 端
