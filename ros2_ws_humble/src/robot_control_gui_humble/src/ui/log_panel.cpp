@@ -288,6 +288,7 @@ void LogPanel::exportLog() {
   }
   QTextStream os(&f);
   os.setCodec("UTF-8");
+  os.setGenerateByteOrderMark(true);   // 带 BOM,Excel/WPS 直接双击才不会把中文显示成乱码
   os << "time,level,source,message\n";
   int written = 0;
   for (int r = 0; r < table_->rowCount(); ++r) {
@@ -302,10 +303,27 @@ void LogPanel::exportLog() {
        << esc(table_->item(r,2)->text()) << ","
        << esc(table_->item(r,3)->text()) << "\n";
   }
+  // 落盘校验:以前只看「有没有打开成功」就直接弹「导出成功」,没确认真的写下去了。
+  // 现在 flush 后查 error + 看文件实际大小,写 0 行也单独提示(时间范围选空了)。
+  os.flush();
+  const bool io_ok = (f.error() == QFile::NoError);
+  const qint64 bytes = f.size();
   f.close();
+  if (!io_ok) {
+    QMessageBox::warning(this, tr("导出失败"),
+        tr("写入 %1 时出错,文件可能不完整").arg(path));
+    return;
+  }
+  if (written == 0) {
+    QMessageBox::information(this, tr("导出日志"),
+        tr("所选时间段(%1 ~ %2)内没有日志,未写出记录。")
+            .arg(t_from.toString("HH:mm:ss")).arg(t_to.toString("HH:mm:ss")));
+    return;
+  }
   QMessageBox::information(this, tr("导出成功"),
-      tr("已导出 %1 行(%2 ~ %3)到:\n%4")
-      .arg(written).arg(t_from.toString("HH:mm:ss")).arg(t_to.toString("HH:mm:ss")).arg(path));
+      tr("已导出 %1 行(%2 ~ %3),%4 字节到:\n%5")
+      .arg(written).arg(t_from.toString("HH:mm:ss")).arg(t_to.toString("HH:mm:ss"))
+      .arg(bytes).arg(path));
 }
 
 }  // namespace rcj

@@ -11,6 +11,8 @@
 #include "robot_control_gui_humble/ui/log_panel.h"
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 
+#include <cmath>
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
@@ -281,7 +283,7 @@ NavigationPanel::NavigationPanel(std::shared_ptr<RobotController> c,
       "1. 在右侧地图上 <b>左键按下并拖动</b> → 拖的方向就是<b>目标朝向</b>,松手后只是"
       "<b>放一个待发的目标</b>(车不会动)。\n"
       "2. 确认位置/朝向没问题 → 点下面的 <b>▶ 开始导航</b>,车才出发。\n"
-      "3. <b>Shift+左键</b> 点地图 = 告诉 AMCL 小车当前在哪(设初始位姿)。\n"
+      "3. <b>Shift+左键按下并拖动</b> = 告诉 AMCL 小车当前在哪、朝哪(按下=位置,拖的方向=朝向)。\n"
       "4. 导航中可点「取消导航」。"), how_box);
   how->setWordWrap(true);
   how->setTextFormat(Qt::RichText);
@@ -327,7 +329,11 @@ NavigationPanel::NavigationPanel(std::shared_ptr<RobotController> c,
     controller_->sendInitialPose(m);
     LogPanel::noteAs("amcl", tr("设初始位姿 (%1, %2)")
         .arg(m.pose.pose.position.x,0,'f',2).arg(m.pose.pose.position.y,0,'f',2));
-    if (view_) view_->setInitialPose(m.pose.pose.position.x, m.pose.pose.position.y, 0.0);
+    // 标记要画在真实朝向上 —— 之前写死 0,视图看不出设的是哪个方向
+    const auto& q = m.pose.pose.orientation;
+    const double yaw = std::atan2(2.0 * (q.w * q.z + q.x * q.y),
+                                  1.0 - 2.0 * (q.y * q.y + q.z * q.z));
+    if (view_) view_->setInitialPose(m.pose.pose.position.x, m.pose.pose.position.y, yaw);
   });
   st_lay->addWidget(cur_pose_btn);
   root->addWidget(st_box);
@@ -468,7 +474,7 @@ NavigationPanel::NavigationPanel(std::shared_ptr<RobotController> c,
       locate_label_->setText(tr("定位:✅ 已定位  (%1, %2)").arg(x, 0, 'f', 2).arg(y, 0, 'f', 2));
       locate_label_->setStyleSheet("color:#198754;font-weight:bold;");
     } else {
-      locate_label_->setText(tr("定位:❌ 未定位 —— 请在图上 Shift+左键点小车位置(或 📍 按钮)"));
+      locate_label_->setText(tr("定位:❌ 未定位 —— 请在图上 Shift+左键拖动设小车位置和朝向(或 📍 按钮)"));
       locate_label_->setStyleSheet("color:#dc3545;font-weight:bold;");
     }
   });
@@ -697,7 +703,7 @@ NavigationPanel::NavigationPanel(std::shared_ptr<RobotController> c,
     if (ok) {
       QMessageBox::information(this, tr("导航已重启"),
           tr("Nav2 已按新算法重启。\n\n"
-             "下一步:先在地图上设初始位姿(Shift+左键点小车位置,或用 📍按钮),\n"
+             "下一步:先在地图上设初始位姿(Shift+左键拖动:按下=位置、拖向=朝向;或用 📍按钮),\n"
              "等导航页「定位」那行变成 ✅ 已定位(或粒子云聚拢),\n"
              "再拖目标 → 点「开始导航」。"));
     }

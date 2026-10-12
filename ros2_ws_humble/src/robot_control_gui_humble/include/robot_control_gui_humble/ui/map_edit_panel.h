@@ -30,6 +30,11 @@ public:
                         QWidget* parent = nullptr);
   ~MapEditPanel() override;
 
+  bool isEditing() const { return editing_; }
+  // 切走本页时由 MainWindow 调用:edit_mode_ 是共享 RobotView 上的粘性状态,
+  // 不主动退的话,回到导航页后 Shift+左键/左键都会变成画笔(踩过)。
+  void stopEditing() { if (editing_) setEditing(false); }
+
 signals:
   // MainWindow uses this to freeze live /map updates while editing.
   void editModeChanged(bool on);

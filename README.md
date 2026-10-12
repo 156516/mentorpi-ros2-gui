@@ -17,7 +17,7 @@
 - [1. 功能概览](#1-功能概览)
 - [2. 系统架构](#2-系统架构)
 - [3. 技术方案](#3-技术方案)
-- [4. 在一台新 PC 上部署](#4-在一台新-pc-上部署)
+- [4. 部署到一台新电脑](#4-部署到一台新电脑)
 - [5. 接入小车](#5-接入小车)
 - [6. 使用流程（建图 / 导航）](#6-使用流程建图--导航)
 - [7. 换一台机器人](#7-换一台机器人)
@@ -184,7 +184,7 @@ camera_topic: /ascamera/camera_publisher/rgb0/image_compressed
 
 ### 3.4 小车侧常驻服务
 
-两个 `rclpy` 节点跑在小车容器里，让 GUI 无需 SSH 即可控制 SLAM 与 Nav2 生命周期：
+四个 `rclpy` 节点跑在小车容器（`MentorPi`）里，由 `start_robot_services.sh` 拉起：
 
 - **`slam_controller.py`** — 服务：`/start_slam`、`/stop_slam`、`/is_mapping`；
   发布 `/slam_status`。按方法拉起对应 launch（`slam_toolbox` / `rtabmap` / `hector` /
@@ -193,10 +193,20 @@ camera_topic: /ascamera/camera_publisher/rgb0/image_compressed
   `/list_nav_plugins`；订阅 `/nav_params`（JSON）、`/nav_map_upload`（`OccupancyGrid`,
   latched）；发布 `/nav_status`。它把 GUI 选择写进 `nav2_params_gui.yaml` 并重启 Nav2，
   扫描 `custom_ws` 下的自定义插件并入下拉列表。
+- **`cmd_vel_watchdog.py`** — 订阅 `/controller/cmd_vel`，超过 1 秒没收到新指令就主动
+  发零速。防的是「GUI 断了 / 卡了，车还按最后一条指令一直跑」。
+- **`camera_color_relay.py`** — 把相机的 `yuv422_yuy2` 原图转成彩色 JPEG 再发到
+  `/ascamera/camera_publisher/rgb0/image_color/compressed`。
+  小车的 `compressed_image_transport` 压 `yuv422_yuy2` 时**只取 Y 通道**（发出来是灰度），
+  所以彩色画面得靠这个 relay 绕过去。
 
-两个脚本都会 **自 re-exec**：先 `source` 小车 overlay 再 `exec python3 自己`，
+**四个脚本都会自 re-exec**：先 `source` 小车 overlay 再 `exec python3 自己`，
 因此从 `bash -c` / `docker exec` / `nohup` 任何上下文启动都能拿到正确的
 `AMENT_PREFIX_PATH` / `LD_LIBRARY_PATH`。
+
+> 改完任何一个小车端脚本，都要**重新覆盖到小车并重启该服务**才生效；
+> 别用 `pkill -f xxx.py` 直接杀（在 `bash -c` 里会连自己的 shell 一起杀掉，静默失效）。
+> `start_robot_services.sh` 已经处理了这些。
 
 ### 3.5 关键话题 / 服务 / action（mentorpi）
 
@@ -212,13 +222,24 @@ camera_topic: /ascamera/camera_publisher/rgb0/image_compressed
 
 ---
 
-## 4. 在一台新 PC 上部署
+## 4. 部署到一台新电脑
 
-### 4.1 前置条件
+先按「你会不会改这套代码」选一条路：
+
+| 路线 | 适合谁 | 要做什么 | 首次耗时 |
+|---|---|---|---|
+| **A. 导入现成镜像** | 只想用，不碰代码 | `docker load` 一个压缩包 | 约 3 分钟 |
+| **B. 从源码构建** | 要改代码 | `git clone` + `docker build` | 20~40 分钟 |
+
+GUI 的全部依赖（ROS2 Humble、Qt5、Nav2 相关库）都封在 Docker 镜像里，
+**宿主电脑不需要装 ROS，也不需要 git**（路线 A）。
+
+### 4.1 前置条件（两条路都要）
 
 - Ubuntu（22.04 / 24.04 均可，**PC 的 ROS 版本不重要**——GUI 跑在容器里）。
 - 已安装 **Docker**（能用 `docker run --net=host`）。
-- 宿主具备 X11 / Wayland 图形环境。
+- 宿主具备 X11 / Wayland 图形环境（要弹出窗口）。
+- 磁盘留 **≥ 10 GB**（镜像解开后约 5.5 GB）。
 - 若要用运维脚本：`sshpass`、`xauth`（`sudo apt install sshpass x11-xserver-utils`）。
 
 ```bash
@@ -226,17 +247,68 @@ camera_topic: /ascamera/camera_publisher/rgb0/image_compressed
 docker run --rm hello-world
 ```
 
-### 4.2 克隆并构建镜像
+> ⚠️ **CPU 架构必须对得上**：分发的镜像是 **x86_64（amd64）**，普通 PC / 笔记本都没问题。
+> **ARM 机器（另一台树莓派、Apple 芯片 Mac）装不上这个镜像**，只能走路线 B 自己编；
+> Windows / macOS 原生也不支持（脚本是 bash + X11）。
+
+### 4.2 路线 A：导入现成镜像（推荐给不开发的人）
+
+作者会给你一个镜像压缩包 + 几个脚本文件。**不用装 ROS、不用 git、不用编译。**
 
 ```bash
-git clone https://github.com/<你的用户名>/mentorpi-ros2-gui.git
+# 1) 装 docker（还没装的话）
+sudo apt install docker.io
+
+# 2) 导入镜像（约 1~3 分钟）
+docker load -i mentorpi-gui-image.tar.gz
+
+# 3) 把下面那张表里的文件都放进同一个文件夹，cd 进去
+# 4) 起 GUI
+bash run_humble_gui.sh
+```
+
+窗口出来 → 点 **「🔌 连接小车」** → 填小车 IP → 确定。
+
+需要拷过去的文件（都是 KB 级脚本，**不含任何源码**）：
+
+| 文件 | 作用 |
+|---|---|
+| `run_humble_gui.sh` | 启动脚本（起容器、挂目录、配 DDS、起雷达 relay） |
+| `sync_robot_clock.sh` | 校准小车时钟 —— **不校会出一堆「未定位」怪问题** |
+| `scan_relay.py` | `/scan_raw → /scan` 雷达话题转发 |
+| `robots/mentorpi.yaml` | 话题名 / 坐标系 / 相机话题配置 |
+| `maps/` | 放地图用的目录（空目录也行） |
+| `start_robot_services.sh`、`robot_nav2.sh` | 想让小车跑建图/导航才需要 |
+
+> **作者打包命令**（打一次，发给很多人用）：
+> ```bash
+> docker save robot_control_gui_humble:latest | gzip > mentorpi-gui-image.tar.gz
+> ```
+> 约 2 GB。接收方 `docker load -i` 即可，**不需要 `docker build`**。
+
+### 4.3 路线 B：从源码构建（要改代码时）
+
+```bash
+git clone https://github.com/156516/mentorpi-ros2-gui.git
 cd mentorpi-ros2-gui
 
 # 构建 Humble 容器镜像（apt 层会缓存，首次较慢）
 docker build -f Dockerfile.humble -t robot_control_gui_humble:latest .
 ```
 
-### 4.3 一键启动
+改完 `ros2_ws_humble/` 下的源码后，**重跑一次完整构建**：
+
+```bash
+docker build -f Dockerfile.humble -t robot_control_gui_humble:latest .
+bash run_humble_gui.sh          # 删掉旧容器重建，新镜像即生效
+```
+
+> ⚠️ **改 C++ 必须重建镜像**（`.so` 是编译进镜像的），不要用 `FROM 旧镜像` 的增量写法 ——
+> 会踩到层缓存，改了代码却没生效。
+
+若只想快速验证能不能编译过：进一个 Humble 容器里 `colcon build` 就够，不必每次全量重建。
+
+### 4.4 一键启动
 
 ```bash
 # ① 起 GUI（自动：校准小车时钟 → 起容器 → 起 /scan_raw→/scan relay）
@@ -252,26 +324,20 @@ GUI 窗口出现后，点 **「🔌 连接小车」** → 输入小车 IP（默�
 > GUI 保持完全静默，可安全查看 UI 布局。也可设环境变量
 > `RCJ_AUTOCONNECT_IP=<ip>` 自动连接（跳过弹框），`RCJ_SHOW_HELP=1` 启动即弹帮助。
 
-### 4.4 开发（改代码后重新构建）
-
-```bash
-# 改 ros2_ws_humble/ 下源码后，重跑完整构建（不要用增量 FROM 旧镜像）
-docker build -f Dockerfile.humble -t robot_control_gui_humble:latest .
-bash run_humble_gui.sh          # 重启容器即生效
-```
-
-若只想快速验证编译：进入一个 Humble 容器内 `colcon build`，无需每次全量重建镜像。
-
 ### 4.5 环境变量
 
 | 变量 | 作用 |
 |---|---|
 | `DISPLAY` | 传给容器（默认 `:0`） |
 | `ROS_DOMAIN_ID` | 必须与小车一致（mentorpi 默认 `0`） |
-| `ROS_AUTOMATIC_DISCOVERY_RANGE` | `SUBNET`（默认） |
+| `RMW_IMPLEMENTATION` | `rmw_fastrtps_cpp`（`run_humble_gui.sh` 写死，两端必须一致） |
+| `ROS_DISCOVERY_SERVER` | 发现服务器地址，默认 `10.132.156.106:11811`（小车的 ZeroTier IP）。**跨城必设**，改它可切换到别的服务器 |
+| `ROS_AUTOMATIC_DISCOVERY_RANGE` | `SUBNET`（默认）。⚠️ 设了 `ROS_DISCOVERY_SERVER` 后此项失效 —— 发现走服务器，不再看这个 |
 | `RCJ_AUTOCONNECT_IP` | 设了则自动连接该 IP，跳过弹框（便于自动化测试） |
 | `RCJ_SHOW_HELP` | 启动即弹出内置使用说明 |
 | `RCJ_ROBOTS_DIR` | 配置档目录（`run_humble_gui.sh` 挂载为 `/robots`） |
+
+> 跨城链路（ZeroTier + Discovery Server）的完整说明见 [REMOTE_NETWORK.md](REMOTE_NETWORK.md)。
 
 ---
 
@@ -301,8 +367,9 @@ bash sync_robot_clock.sh        # run_humble_gui.sh 已自动调用
 bash start_robot_services.sh
 ```
 
-它通过 `sshpass + docker exec -d -u ubuntu MentorPi` 起 `slam_controller` 和
-`nav_controller`（**必须 detached**；普通 `exec` 一退出进程就被杀）。这两个服务
+它通过 `sshpass + docker exec -d -u ubuntu MentorPi` 起四个常驻服务：
+`slam_controller`、`nav_controller`、`cmd_vel_watchdog`、`camera_color_relay`
+（**必须 detached**；普通 `exec` 一退出进程就被杀）。这四个
 **不是开机自启的，每次小车重启后都要重起**。
 
 > 想让 `slam_controller` 开机自启：`bash setup_sd_card.sh /media/$USER/rootfs`
@@ -412,14 +479,21 @@ colcon test-result --verbose
 | 自定义算法选不到 | 没跑 `deploy_algo.sh`，或 `nav_controller` 没重启 |
 | 换车 | 改 `robots/*.yaml`，设置页选它，重启 GUI |
 | 镜像越来越大 | 别用增量 `FROM` 旧镜像构建，重跑完整 Dockerfile |
+| 相机画面一直黑白 | 小车端 `camera_color_relay.py` 没起（见 §3.4）→ `bash start_robot_services.sh` |
+| 粒子云勾了却不显示 | **车静止时 AMCL 不发粒子云**（事件驱动，只有做完一次定位更新才发）。设一次初始位姿就能看到 |
+| 点「测试 ROS 连接」没反应 | 它是在数 DDS 发现到的发布者，刚连上要等最多 3 秒 |
+| 停了 Nav2 图层还留着 | 代价地图 4 秒后自动清；粒子云看发布者在不在（都已处理，若仍残留请反馈） |
 
 **其它限制**：
 
-- **地图持久化**：保存的路径交给小车端服务，GUI 不自动下载到本地（PC 侧 `maps/` 是
-  GUI 另存/导入用的）。
+- **地图保存不走 ROS 服务**：建图页的 Save 是 GUI 直接拿手里的 `/map` 快照，
+  用 `QFile` 写 `<名>.pgm` + `<名>.yaml`。落点是**容器内的路径**（默认 `/maps/...`），
+  而 `/maps` 挂载到 PC 的 `robot_control_gui_ros2/maps/` —— 所以**路径框必须填
+  `/maps/` 开头的容器内路径**，填 PC 绝对路径会写不出来或写错地方。
 - **机器人显示位姿**：优先用 TF 的 `map` 帧（`tryGetRobotPoseInMap`），TF 不可用时回退
   `odom`——只用 odom 会与地图差一个 `map→odom` 旋转（实测约 16°）。
-- **跨网段**：当前仅支持 DDS 直连（同网段）。跨网段需改用 rosbridge/WebSocket。
+- **跨网段**：支持。跨城走 **ZeroTier + FastDDS Discovery Server**（服务器跑在小车上），
+  详见 [REMOTE_NETWORK.md](REMOTE_NETWORK.md)。
 
 ---
 

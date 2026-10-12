@@ -62,11 +62,12 @@ void RobotController::setupSubscribersOnly() {
       topics::cameraCompressedImage().toStdString(), rclcpp::SensorDataQoS(),
       std::bind(&RobotController::onCompressedImage, this, _1));
 
-  // AMCL 粒子云(定位不确定性可视化)
-  // 用默认(volatile)QoS:AMCL 的 /particlecloud 若是 volatile 发布,
-  // 订阅端要 transient_local 就匹配不上了。volatile 订阅两边都能收。
-  particle_sub_ = node_->create_subscription<geometry_msgs::msg::PoseArray>(
-      "/particlecloud", rclcpp::QoS(1),
+  // AMCL 粒子云(定位不确定性可视化)。三处必须和 Nav2 AMCL 对齐,否则一条都收不到(踩过):
+  //   话题名  /particle_cloud(不是老的 /particlecloud)
+  //   消息类型 nav2_msgs/ParticleCloud(不是 geometry_msgs/PoseArray)
+  //   QoS     AMCL 用 BEST_EFFORT 发布 → 订阅端也必须 best_effort(RELIABLE 与之不兼容)
+  particle_sub_ = node_->create_subscription<nav2_msgs::msg::ParticleCloud>(
+      "/particle_cloud", rclcpp::QoS(1).best_effort(),
       std::bind(&RobotController::onParticleCloud, this, _1));
 
   path_sub_ = node_->create_subscription<nav_msgs::msg::Path>(
@@ -192,6 +193,57 @@ void RobotController::sendInitialPose(const geometry_msgs::msg::PoseWithCovarian
   initial_pose_pub_->publish(pose);
   RCLCPP_INFO(node_->get_logger(), "Initial pose published to /initialpose");
   clearAllCostmaps();
+
+  // --- 补发 ---
+  // 上面那一发经常是「无效」的:要么这是第一次用(发布者刚建好,FastDDS 还没
+  // 和 AMCL 的订阅匹配上),要么 Nav2 刚重启完(AMCL 才起来,DDS 发现还没完成,
+  // 跨城走 Discovery Server 时这一步要几百毫秒)。收不到的表现就是
+  // 「设初始位姿第一点必丢,得点第二次」。
+  // 解决办法:存一份这一次的位姿,隔 400ms 重发一次,直到确认 /initialpose
+  // 已经有订阅者(说明匹配完成,这时发出去必定送到);最多重发 8 次(约 3.2 秒)。
+  // 重复设同一个初始位姿对 AMCL 是幂等的(就是把滤波器重新初始化到那个位姿),
+  // 所以补发没有副作用。
+  pending_initial_pose_ =
+      std::make_shared<geometry_msgs::msg::PoseWithCovarianceStamped>(pose);
+  initial_pose_retry_count_ = 0;
+  if (initial_pose_retry_timer_) {
+    initial_pose_retry_timer_->cancel();
+    initial_pose_retry_timer_.reset();
+  }
+  initial_pose_retry_timer_ = node_->create_wall_timer(
+      std::chrono::milliseconds(400), [this]() { onInitialPoseRetry(); });
+}
+
+void RobotController::onInitialPoseRetry() {
+  constexpr int kMaxRetries = 8;   // 8 x 400ms ≈ 3.2s
+  if (!initial_pose_pub_ || !pending_initial_pose_) {
+    if (initial_pose_retry_timer_) initial_pose_retry_timer_->cancel();
+    pending_initial_pose_.reset();
+    return;
+  }
+  const size_t subs = initial_pose_pub_->get_subscription_count();
+  if (subs > 0) {
+    // 已经匹配上 AMCL 了,这一发一定收得到 —— 发完就收工。
+    initial_pose_pub_->publish(*pending_initial_pose_);
+    RCLCPP_INFO(node_->get_logger(),
+                "initialpose 重发完成(第 %d 次补发,已匹配 %zu 个订阅者)",
+                initial_pose_retry_count_ + 1, subs);
+    if (initial_pose_retry_timer_) initial_pose_retry_timer_->cancel();
+    initial_pose_retry_timer_.reset();
+    pending_initial_pose_.reset();
+    return;
+  }
+  ++initial_pose_retry_count_;
+  if (initial_pose_retry_count_ > kMaxRetries) {
+    RCLCPP_WARN(node_->get_logger(),
+                "initialpose 补发 %d 次仍未见订阅者 — AMCL/Nav2 起了吗?",
+                kMaxRetries);
+    if (initial_pose_retry_timer_) initial_pose_retry_timer_->cancel();
+    initial_pose_retry_timer_.reset();
+    pending_initial_pose_.reset();
+    return;
+  }
+  initial_pose_pub_->publish(*pending_initial_pose_);
 }
 
 void RobotController::clearAllCostmaps() {
@@ -276,8 +328,14 @@ void RobotController::onLocalCostmap(const nav_msgs::msg::OccupancyGrid::SharedP
   emit localCostmapUpdated(*msg);
 }
 
-void RobotController::onParticleCloud(const geometry_msgs::msg::PoseArray::SharedPtr msg) {
-  emit particleCloudUpdated(*msg);
+void RobotController::onParticleCloud(const nav2_msgs::msg::ParticleCloud::SharedPtr msg) {
+  // Humble 的 ParticleCloud.particles 是 Particle[](每个 = pose + weight),
+  // 不是 PoseArray。渲染侧只关心位姿 → 抽出来打包成 PoseArray 再发。
+  geometry_msgs::msg::PoseArray pa;
+  pa.header = msg->header;
+  pa.poses.reserve(msg->particles.size());
+  for (const auto& p : msg->particles) pa.poses.push_back(p.pose);
+  emit particleCloudUpdated(pa);
 }
 
 void RobotController::onCompressedImage(const sensor_msgs::msg::CompressedImage::SharedPtr msg) {

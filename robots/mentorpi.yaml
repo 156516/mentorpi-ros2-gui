@@ -26,4 +26,7 @@ lidar_frame: lidar_frame
 has_nav2: true                     # 有没有 Nav2(/navigate_to_pose 等)
 has_slam_controller: true          # 小车端有没有 slam_controller 节点
 has_camera: true                   # 有没有相机话题
-camera_topic: /ascamera/camera_publisher/rgb0/image_compressed
+# ⚠️ 必须订小车端 camera_color_relay 转出来的彩色话题,不要订原来的 image_compressed:
+#    usb_cam 的相机硬件只出 YUYV,compressed_image_transport 2.5.2 压 yuv422_yuy2 时
+#    只取 Y 通道 → 那张 image_compressed 是【灰度】的(车上有 camera_color_relay.py 修它)。
+camera_topic: /ascamera/camera_publisher/rgb0/image_color/compressed

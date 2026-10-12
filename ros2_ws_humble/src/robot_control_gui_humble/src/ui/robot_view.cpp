@@ -94,8 +94,13 @@ void RobotView::mousePressEvent(QMouseEvent* e) {
     }
     const QPointF world = mapToScene(e->pos());
     if (e->modifiers() & Qt::ShiftModifier) {
-      setInitialPose(world.x(), world.y(), 0.0);
-      emit initialPoseSelected(world.x(), world.y(), 0.0);
+      // RViz "2D Pose Estimate" 那样:按下 → 位置;拖动 → 朝向;松开 → 下发。
+      // 不拖动时的默认朝向 = 车当前车头方向(比写死 0 合理)。
+      initial_dragging_ = true;
+      draft_ix_ = world.x();
+      draft_iy_ = world.y();
+      draft_iyaw_ = robot_yaw_;
+      setInitialPose(draft_ix_, draft_iy_, draft_iyaw_);
     } else {
       // RViz 2D Nav Goal 那样:按下开始画,拖的方向 = 目标朝向
       goal_dragging_ = true;
@@ -149,6 +154,15 @@ void RobotView::mouseMoveEvent(QMouseEvent* e) {
     }
     return;
   }
+  if (initial_dragging_ && (e->buttons() & Qt::LeftButton) && !edit_mode_) {
+    const QPointF w = mapToScene(e->pos());
+    const double dx = w.x() - draft_ix_, dy = w.y() - draft_iy_;
+    if (std::hypot(dx, dy) > 0.05) {          // 拖出一点距离才改朝向
+      draft_iyaw_ = std::atan2(dy, dx);
+      setInitialPose(draft_ix_, draft_iy_, draft_iyaw_);
+    }
+    return;
+  }
   if (edit_mode_) {
     if (e->buttons() & Qt::LeftButton) {
       const QPointF w = mapToScene(e->pos());
@@ -178,6 +192,10 @@ void RobotView::mouseReleaseEvent(QMouseEvent* e) {
       goal_dragging_ = false;
       has_draft_goal_ = true;
       emit goalDrafted(draft_x_, draft_y_, draft_yaw_);   // 只起草,不下发
+    } else if (initial_dragging_) {
+      // 初始位姿没有"确认"这一步,松手即下发给 AMCL
+      initial_dragging_ = false;
+      emit initialPoseSelected(draft_ix_, draft_iy_, draft_iyaw_);
     }
   }
 }
@@ -351,11 +369,17 @@ void RobotView::clearDraftGoal() {
   if (goal_arrow_)  { scene()->removeItem(goal_arrow_);  delete goal_arrow_;  goal_arrow_  = nullptr; }
 }
 
-void RobotView::setInitialPose(double x, double y, double /*yaw*/) {
-  if (initial_marker_) { scene()->removeItem(initial_marker_); delete initial_marker_; }
+void RobotView::setInitialPose(double x, double y, double yaw) {
+  if (initial_marker_) { scene()->removeItem(initial_marker_); delete initial_marker_; initial_marker_ = nullptr; }
+  if (initial_arrow_)  { scene()->removeItem(initial_arrow_);  delete initial_arrow_;  initial_arrow_  = nullptr; }
   initial_marker_ = scene()->addEllipse(x - 0.15, y - 0.15, 0.3, 0.3,
                                         QPen(QColor(30, 110, 255), 0.02), QBrush(QColor(30, 110, 255)));
   initial_marker_->setZValue(3);
+  // 朝向箭头 —— 不画的话根本看不出设的是哪个方向
+  initial_arrow_ = scene()->addLine(x, y,
+                                    x + 0.45 * std::cos(yaw), y + 0.45 * std::sin(yaw),
+                                    QPen(QColor(30, 110, 255), 0.05));
+  initial_arrow_->setZValue(3);
 }
 
 void RobotView::clearOverlays() {
@@ -365,7 +389,9 @@ void RobotView::clearOverlays() {
   if (goal_marker_) { scene()->removeItem(goal_marker_); delete goal_marker_; goal_marker_ = nullptr; }
   if (goal_arrow_)  { scene()->removeItem(goal_arrow_);  delete goal_arrow_;  goal_arrow_ = nullptr; }
   if (initial_marker_) { scene()->removeItem(initial_marker_); delete initial_marker_; }
+  if (initial_arrow_)  { scene()->removeItem(initial_arrow_);  delete initial_arrow_; }
   path_item_ = nullptr; goal_marker_ = nullptr; initial_marker_ = nullptr;
+  initial_arrow_ = nullptr;
 }
 
 }  // namespace rcj

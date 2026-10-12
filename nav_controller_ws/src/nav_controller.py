@@ -247,12 +247,15 @@ class NavController(Node):
         rr = self._cfg.get('robot_radius')
         ir = self._cfg.get('inflation_radius')
         for cm in ('global_costmap', 'local_costmap'):
-            c = p.get(cm, {}).get('ros__parameters')
+            # nav2_params.yaml 里 costmap 是双层嵌套(节点 namespace/name):
+            #   global_costmap: { global_costmap: { ros__parameters: {...} } }
+            # 兼容单层(有些自定义配置会拍平)。
+            n = p.get(cm) or {}
+            c = (n.get(cm) if isinstance(n.get(cm), dict) else n).get('ros__parameters')
             if not isinstance(c, dict):
                 continue
             c['robot_radius'] = rr
-            if isinstance(c.get('inflation_layer'), dict):
-                c['inflation_layer']['inflation_radius'] = ir
+            c.setdefault('inflation_layer', {})['inflation_radius'] = ir
 
         # 额外(高级)参数:深合并,例如 {"controller_server":{"FollowPath":{"max_vel_x":0.4}}}
         extra = self._cfg.get('extra') or {}

@@ -41,6 +41,7 @@ void rcj_disconnect();
 #include <sensor_msgs/msg/laser_scan.hpp>
 #include <diagnostic_msgs/msg/diagnostic_array.hpp>
 #include <nav2_msgs/action/navigate_to_pose.hpp>
+#include <nav2_msgs/msg/particle_cloud.hpp>
 #include <nav2_msgs/srv/save_map.hpp>
 #include <std_srvs/srv/empty.hpp>
 #include <std_msgs/msg/u_int16.hpp>
@@ -118,7 +119,8 @@ signals:
   // Nav2 代价地图(全局/局部)。Nav2 没跑时不会发。
   void globalCostmapUpdated(const nav_msgs::msg::OccupancyGrid& map);
   void localCostmapUpdated (const nav_msgs::msg::OccupancyGrid& map);
-  // AMCL 粒子云(/particlecloud)。只在 AMCL 在跑时才有。
+  // AMCL 粒子云(/particle_cloud,nav2_msgs/ParticleCloud)。只在 AMCL 在跑时才有。
+  // 信号沿用 PoseArray:渲染侧只关心一堆点位,由 onParticleCloud 把 particles 解出来。
   void particleCloudUpdated(const geometry_msgs::msg::PoseArray& cloud);
   // 摄像头画面(已解码)。收到一帧就发一次。
   void cameraImageUpdated(const QImage& image);
@@ -142,7 +144,7 @@ private:
   void onMap (const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
   void onGlobalCostmap(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
   void onLocalCostmap (const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
-  void onParticleCloud(const geometry_msgs::msg::PoseArray::SharedPtr msg);
+  void onParticleCloud(const nav2_msgs::msg::ParticleCloud::SharedPtr msg);
   void onCompressedImage(const sensor_msgs::msg::CompressedImage::SharedPtr msg);
   void onPath(const nav_msgs::msg::Path::SharedPtr msg);
   void onBattery(const sensor_msgs::msg::BatteryState::SharedPtr msg);
@@ -158,7 +160,7 @@ private:
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr global_costmap_sub_;
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr local_costmap_sub_;
-  rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr particle_sub_;
+  rclcpp::Subscription<nav2_msgs::msg::ParticleCloud>::SharedPtr particle_sub_;
   rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr camera_sub_;
   rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr path_sub_;
   rclcpp::Subscription<std_msgs::msg::UInt16>::SharedPtr bat_u16_sub_;  // battery_type=uint16
@@ -167,6 +169,13 @@ private:
 
   // Clients (P4 / P5)
   rclcpp::Client<nav2_msgs::srv::SaveMap>::SharedPtr save_map_client_;
+
+  // /initialpose 的补发(见 sendInitialPose 的实现注释)。第一帧经常赶在 DDS
+  // 和 AMCL 匹配完成之前就发出去了 —— 收不到,表现为「设初始位姿第一点必丢」。
+  void onInitialPoseRetry();
+  rclcpp::TimerBase::SharedPtr initial_pose_retry_timer_;
+  std::shared_ptr<geometry_msgs::msg::PoseWithCovarianceStamped> pending_initial_pose_;
+  int initial_pose_retry_count_{0};
   rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr nav_map_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
       initial_pose_pub_;

@@ -26,7 +26,8 @@ namespace rcj {
 //   wheel        = zoom (anchor under mouse)
 //   middle drag  = pan
 //   right drag   = rotate about the viewport centre  (NOT in edit mode)
-//   left click   = set goal (Shift+left = set initial pose)  (NOT in edit mode)
+//   left click   = set goal  (NOT in edit mode)
+//   Shift+left drag = set initial pose (press=position, drag=heading, release=sends)
 //   left/right drag = paint brush  (edit mode only)
 //
 // Coordinate convention: scene is metres in the map frame, with y flipped up
@@ -95,6 +96,7 @@ private:
   QGraphicsEllipseItem* goal_marker_{nullptr};
   QGraphicsLineItem*    goal_arrow_{nullptr};
   QGraphicsEllipseItem* initial_marker_{nullptr};
+  QGraphicsLineItem*    initial_arrow_{nullptr};
   QGraphicsPathItem*    path_item_{nullptr};
   QGraphicsPixmapItem*  global_costmap_item_{nullptr};
   QGraphicsPixmapItem*  local_costmap_item_{nullptr};
@@ -105,6 +107,9 @@ private:
   bool has_draft_goal_{false};
   bool goal_dragging_{false};
   double draft_x_{0.0}, draft_y_{0.0}, draft_yaw_{0.0};
+  // Shift+左键设初始位姿:按下定位置,拖动定朝向(RViz 2D Pose Estimate 那样)
+  bool   initial_dragging_{false};
+  double draft_ix_{0.0}, draft_iy_{0.0}, draft_iyaw_{0.0};
 
   // laser fan is recreated every update for simplicity
   QList<QGraphicsItem*> laser_items_;

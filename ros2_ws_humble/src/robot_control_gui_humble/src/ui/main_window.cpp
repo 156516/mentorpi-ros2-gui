@@ -3,6 +3,7 @@
 
 #include <cmath>
 
+#include <QDateTime>
 #include <QTabWidget>
 #include <QScrollArea>
 #include <QFrame>
@@ -96,7 +97,7 @@ void MainWindow::showHelp() {
 <ul>
 <li><b>滚轮</b> = 缩放 · <b>中键拖动</b> = 平移 · <b>右键拖动</b> = 旋转</li>
 <li>点 <b>🎯 重置视图</b> 回到正北朝上、自适应大小;工具栏会显示当前视角角度。</li>
-<li><b>左键点地图</b> = 设导航目标点 · <b>Shift+左键</b> = 设初始位姿。</li>
+<li><b>左键点地图</b> = 设导航目标点 · <b>Shift+左键按下并拖动</b> = 设初始位姿(按下=位置,拖的方向=车头朝向)。</li>
 </ul>
 
 <h3>③ 控制页</h3>
@@ -128,7 +129,7 @@ void MainWindow::showHelp() {
 <h3>⑥ 导航页</h3>
 <ul>
 <li>先确认小车端起了 Nav2 —— 点 <b>应用并重启导航</b>(需先有地图:用刚建的图点「📤 上传当前地图给小车」,或用小车上的图把路径留空)。等 10~20 秒。</li>
-<li><b>设初始位姿(关键)</b>:点 <b>📍 用当前位置设为初始位姿</b>,或在地图上 <b>Shift+左键</b> 点小车实际位置。<b>不设的话定位是散的,车不会动</b>。</li>
+<li><b>设初始位姿(关键)</b>:点 <b>📍 用当前位置设为初始位姿</b>,或在地图上 <b>Shift+左键按下并拖动</b>(按下处=小车位置,拖的方向=车头朝向)。<b>不设的话定位是散的,车不会动</b>。</li>
 <li>看 <b>粒子云</b> 判断准不准:聚成一小团 = 准,散开 = 不准,跑到别处 = 收错了 → 重设。</li>
 <li>地图上 <b>左键按住拖动</b>(拖的方向 = 目标朝向)→ 出现绿点 + 绿箭头 → 点 <b>▶ 开始导航</b> 车才走。</li>
 <li>看状态:导航中 / 已到达 / 失败,剩余距离实时刷新;中断点 <b>✗ 取消导航</b>。</li>
@@ -235,7 +236,7 @@ void MainWindow::setupUi() {
 
   // 底部常驻操作提示 —— 鼠标怎么用一眼可见,不用翻文档
   auto* nav_hint = new QLabel(tr(
-      "视图:滚轮缩放 · 中键拖动平移 · 右键拖动旋转 | 地图:左键设目标 · Shift+左键设初始位姿"));
+      "视图:滚轮缩放 · 中键拖动平移 · 右键拖动旋转 | 地图:左键设目标 · Shift+左键拖动设初始位姿(位置+朝向)"));
   nav_hint->setStyleSheet("color:#6c757d;");
   statusBar()->addPermanentWidget(nav_hint);
 
@@ -309,7 +310,12 @@ void MainWindow::setupUi() {
   // 页签区 : 地图视图 = 3 : 2。控制页三个分组框(摇杆 160 + 仪表 180 + 摄像头 320)
   // 并排最少要 ~750px,按 1:2 分只给 ~425px,页面会一直挂着横向滚动条。
   cp_lay->addWidget(left_col, 3);
-  cp_lay->addWidget(new QWidget(connected_page), 2);  // view placeholder
+  // 地图视图的占位。这两样都存成成员:重连时要靠它们把旧 view 摘干净、
+  // 再把新的挂回去(见 onConnectClicked 里那段注释)。
+  view_placeholder_ = new QWidget(connected_page);
+  cp_lay->addWidget(view_placeholder_, 2);
+  center_lay_ = cp_lay;
+  center_page_ = connected_page;
   body_stack_->addWidget(connected_page);
 
   setCentralWidget(body_stack_);
@@ -318,6 +324,78 @@ void MainWindow::setupUi() {
     QTimer::singleShot(5000, this, [this]() {
       qDebug() << "==== LAYOUT DUMP ====";
       rcjDumpTree(this, 0);
+    });
+  }
+
+  // 回归自测钩子:点不了界面的环境下验证「断开 → 重连」后地图视图还在不在。
+  // 以前的实现会让 view_ 在重连后保持为空(右侧一片空白),这里直接调槽函数
+  // 走一遍,把三步的 view_ 状态打到 stdout。需配合 RCJ_AUTOCONNECT_IP 使用
+  // (否则 onConnectClicked 会弹输入框):
+  //   RCJ_AUTOCONNECT_IP=10.132.156.106 RCJ_SELFTEST_RECONNECT=1 bash run_humble_gui.sh
+  if (!qEnvironmentVariable("RCJ_SELFTEST_RECONNECT").isEmpty()) {
+    QTimer::singleShot(8000, this, [this]() {
+      const bool after_first_connect = (view_ != nullptr);
+      onDisconnectClicked();
+      const bool after_disconnect = (view_ != nullptr);
+      onConnectClicked();
+      const bool after_reconnect = (view_ != nullptr);
+      qInfo().noquote()
+          << QString("[selftest] 地图视图: 首连=%1 断开后=%2 重连后=%3 → %4")
+                 .arg(after_first_connect ? "有" : "无")
+                 .arg(after_disconnect ? "有" : "无")
+                 .arg(after_reconnect ? "有" : "无")
+                 .arg(after_reconnect ? "✅ 通过" : "❌ 重连后仍是空白");
+
+      // 设置页的两个 bug:
+      //  D) 保存时串写 —— 旧代码从 pi_host 里截 IP,存进去的不是「机器人 IP」框的值。
+      //  B) 测试 ROS 连接永久卡在「正在 ping ...」(没装 ping → 只发 errorOccurred)。
+      if (settings_panel_) {
+        QSettings qs;
+        const QVariant old_ip   = qs.value("network/robot_ip");
+        const QVariant old_host = qs.value("network/pi_host");
+        // 两个框故意填成不一样的 IP:保存对了就该存下 10.9.9.9
+        settings_panel_->setTestIpFields(QStringLiteral("10.9.9.9"),
+                                         QStringLiteral("pi@10.8.8.8"));
+        settings_panel_->onSave();
+        const QString saved = qs.value("network/robot_ip").toString();
+        qInfo().noquote()
+            << QString("[selftest] 保存的 robot_ip=%1 → %2")
+                   .arg(saved, saved == QLatin1String("10.9.9.9")
+                                   ? QStringLiteral("✅ 取的是「机器人 IP」框")
+                                   : QStringLiteral("❌ 串写成 %1(SSH 主机那个框)")
+                                         .arg(saved));
+        // 别把自测值留在用户的配置里
+        qs.setValue("network/robot_ip", old_ip);
+        qs.setValue("network/pi_host",  old_host);
+
+        settings_panel_->onTestConnection(QStringLiteral("10.132.156.106"));
+        const QString st = settings_panel_->statusText();
+        qInfo().noquote()
+            << QString("[selftest] 测试 ROS 连接(点了立刻查) → \"%1\" %2")
+                   .arg(st, st.contains(QLatin1String("ping"))
+                              ? QStringLiteral("❌ 还卡在「正在 ping」")
+                              : QStringLiteral("✅ 没卡住(有即时反馈)"));
+        // 初始位姿补发(改动里风险最高的一处):发完后看重发逻辑有没有等到
+        // 订阅者再收工 —— 日志里会出现「initialpose 重发完成」。
+        if (controller_ && controller_->node()) {
+          geometry_msgs::msg::PoseWithCovarianceStamped p;
+          p.header.frame_id = "map";
+          p.header.stamp = controller_->node()->get_clock()->now();
+          p.pose.pose = controller_->currentPose();   // 当前位置(=那个按钮的行为)
+          p.pose.covariance[0]  = 0.25;
+          p.pose.covariance[7]  = 0.25;
+          p.pose.covariance[35] = 0.0685;
+          controller_->sendInitialPose(p);
+          qInfo() << "[selftest] 已发初始位姿(用当前位置),等补发逻辑的日志";
+        }
+
+        // 探测是异步轮询的(最多 3 秒),4.5 秒后再读一次拿最终结论
+        QTimer::singleShot(4500, this, [this]() {
+          qInfo().noquote() << QString("[selftest] 测试 ROS 连接(最终结论) → \"%1\"")
+                                   .arg(settings_panel_ ? settings_panel_->statusText()
+                                                        : QStringLiteral("(面板已销毁)"));
+        });
+      }
     });
   }
 
@@ -382,16 +460,24 @@ void MainWindow::onConnectClicked() {
   // before view_ existed, so its `if (view_)` block was skipped and the
   // goalSelected / initialPoseSelected connections were never made
   // (click-to-set-goal silently did nothing).
-  auto* cp = qobject_cast<QWidget*>(body_stack_->widget(1));
-  if (cp) {
-    auto* lay = qobject_cast<QHBoxLayout*>(cp->layout());
-    if (lay && lay->count() >= 2) {
-      auto* old = lay->itemAt(1)->widget();
-      lay->removeWidget(old);
-      delete old;
-      view_ = std::make_unique<RobotView>(cp);
-      lay->addWidget(view_.get(), 2);
+  //
+  // BUGFIX 2(断开→重连后右侧地图一片空白):旧代码靠「布局里 item 数 >= 2」
+  // 判断要不要建视图,并直接取 itemAt(1) 删掉。但 onDisconnectClicked 里
+  // view_.reset() 删掉 RobotView 后,Qt 会自动把它从布局里摘掉 —— 布局只剩
+  // 「页签列」一项,count 变成 1,这个 if 直接不成立,于是重连后 view_ 永远是
+  // 空的。现改成拿成员指针操作:先摘掉占位/旧视图,再挂新的,和 item 数无关。
+  if (center_lay_ && center_page_) {
+    if (view_placeholder_) {
+      center_lay_->removeWidget(view_placeholder_);
+      view_placeholder_->deleteLater();
+      view_placeholder_ = nullptr;
     }
+    if (view_) {  // 理论上不该有,防御性清一下
+      center_lay_->removeWidget(view_.get());
+      view_.reset();
+    }
+    view_ = std::make_unique<RobotView>(center_page_);
+    center_lay_->addWidget(view_.get(), 2);
   }
 
   // Build panels under their tabs.
@@ -419,7 +505,8 @@ void MainWindow::onConnectClicked() {
   tabs_->addTab(scrollable(control_panel_.get()),  tr("控制"));
   tabs_->addTab(scrollable(nav_panel_.get()),      tr("导航"));
   tabs_->addTab(scrollable(mapping_panel_.get()),  tr("建图"));
-  tabs_->addTab(scrollable(map_edit_panel_.get()), tr("地图编辑"));
+  QWidget* map_edit_page = scrollable(map_edit_panel_.get());
+  tabs_->addTab(map_edit_page, tr("地图编辑"));
   tabs_->addTab(scrollable(log_panel_.get()),      tr("日志"));
   tabs_->addTab(scrollable(status_panel_.get()),   tr("状态"));
   tabs_->addTab(scrollable(settings_panel_.get()), tr("设置"));
@@ -427,6 +514,15 @@ void MainWindow::onConnectClicked() {
   // 地图编辑期间冻结实时 /map
   connect(map_edit_panel_.get(), &MapEditPanel::editModeChanged, this,
           [this](bool on) { map_locked_ = on; });
+
+  // 切走「地图编辑」页 = 自动退出编辑模式。edit_mode_ 是共享 RobotView 上的
+  // 粘性状态,不清的话回到导航页后 Shift+左键(设初始位姿)和左键(设目标)
+  // 都会静默变成"拿画笔画墙"。
+  connect(tabs_, &QTabWidget::currentChanged, this,
+          [this, map_edit_page](int idx) {
+            if (map_edit_panel_ && tabs_->widget(idx) != map_edit_page)
+              map_edit_panel_->stopEditing();
+          });
 
   wireUpController();
 
@@ -466,7 +562,15 @@ void MainWindow::onDisconnectClicked() {
   map_edit_panel_.reset();
   log_panel_.reset();
   map_locked_ = false;
+  last_global_costmap_ms_ = last_local_costmap_ms_ = last_particle_ms_ = 0;
+  // 先把地图视图从布局里摘掉再删(不摘也行,Qt 销毁 widget 时会自动摘,
+  // 但显式摘更清楚),然后放回占位,让断开后的状态和刚启动时一致。
+  if (view_ && center_lay_) center_lay_->removeWidget(view_.get());
   view_.reset();
+  if (center_lay_ && center_page_ && !view_placeholder_) {
+    view_placeholder_ = new QWidget(center_page_);
+    center_lay_->addWidget(view_placeholder_, 2);
+  }
   while (tabs_->count() > 0) tabs_->removeTab(0);
   for (const auto& name : {tr("控制"), tr("导航"), tr("建图"), tr("地图编辑"), tr("状态"), tr("设置")}) {
     tabs_->addTab(new QWidget(tabs_), name);
@@ -548,12 +652,14 @@ void MainWindow::wireUpController() {
   connect(controller_.get(), &RobotController::particleCloudUpdated, this,
           [this](const geometry_msgs::msg::PoseArray& pa) {
             if (!view_) return;
+            last_particle_ms_ = QDateTime::currentMSecsSinceEpoch();
             view_->setParticleCloud(RobotController::poseArrayToPoints(pa));
           });
 
   // Nav2 代价地图(全局/局部)—— 半透明彩色覆盖层
   connect(controller_.get(), &RobotController::globalCostmapUpdated, this,
           [this](const nav_msgs::msg::OccupancyGrid& g) {
+            last_global_costmap_ms_ = QDateTime::currentMSecsSinceEpoch();
             if (!view_ || map_locked_) return;
             const QImage img = RobotController::costmapToImage(g);
             if (img.isNull()) return;
@@ -566,6 +672,7 @@ void MainWindow::wireUpController() {
           });
   connect(controller_.get(), &RobotController::localCostmapUpdated, this,
           [this](const nav_msgs::msg::OccupancyGrid& g) {
+            last_local_costmap_ms_ = QDateTime::currentMSecsSinceEpoch();
             if (!view_ || map_locked_) return;
             const QImage img = RobotController::costmapToImage(g);
             if (img.isNull()) return;
@@ -642,7 +749,39 @@ void MainWindow::keyReleaseEvent(QKeyEvent* e) {
   }
 }
 
-void MainWindow::timerEvent(QTimerEvent* /*e*/) {}
+void MainWindow::timerEvent(QTimerEvent* /*e*/) {
+  if (!view_) return;
+  // 代价地图/粒子云的「保鲜」检查(见头文件里那段注释)。
+  // Nav2 一停,这些话题就不再发布,最后一帧会一直留在场景里 —— 让人以为
+  // 导航还在跑。
+  constexpr qint64 kLayerStaleMs = 4000;
+  const qint64 now = QDateTime::currentMSecsSinceEpoch();
+  auto stale = [now](qint64 last) {
+    return last != 0 && (now - last) > kLayerStaleMs;
+  };
+  // 两个代价地图本来就是**周期发布**的(实测跨城约 0.75~1.5 Hz),所以按
+  // 「4 秒没有新帧」判断对端停了是可靠的。
+  if (stale(last_global_costmap_ms_)) {
+    last_global_costmap_ms_ = 0;
+    view_->setCostmapImage(QImage(), 1.0, 0.0, 0.0, 0.0, /*local=*/false);
+  }
+  if (stale(last_local_costmap_ms_)) {
+    last_local_costmap_ms_ = 0;
+    view_->setCostmapImage(QImage(), 1.0, 0.0, 0.0, 0.0, /*local=*/true);
+  }
+  // ⚠️ 粒子云**不能**用超时判断:AMCL 是**事件驱动**发的 —— 实测车静止时
+  // 30 秒一条都不发(只有真的做完一次定位更新才发),按超时清会把用户正盯着的
+  // 粒子云凭空抹掉(而「看粒子云判断定位准不准」正是它的用途)。
+  // 改成看**发布者在不在**:Nav2 一停,/particle_cloud 的发布者就从图里消失。
+  // 只在「已经收到过至少一帧」之后才查(那时双方必然已匹配,不是没发现完的假 0)。
+  if (last_particle_ms_ != 0) {
+    auto node = controller_ ? controller_->node() : nullptr;
+    if (node && node->count_publishers("/particle_cloud") == 0) {
+      last_particle_ms_ = 0;
+      view_->setParticleCloud({});
+    }
+  }
+}
 
 void MainWindow::updateKeyboardControl() {
   if (!controller_ || !control_panel_) return;

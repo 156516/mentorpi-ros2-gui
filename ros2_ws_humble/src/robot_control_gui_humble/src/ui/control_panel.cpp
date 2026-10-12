@@ -5,6 +5,8 @@
 #include <QPushButton>
 #include <QGroupBox>
 #include <QImage>
+#include <QTimer>
+#include <cmath>
 
 #include "robot_control_gui_humble/ui/joystick_widget.h"
 #include "robot_control_gui_humble/ui/speed_dashboard.h"
@@ -55,8 +57,21 @@ void ControlPanel::setupUi() {
   // Right joystick: angular.z via X.
   connect(ang_joy_, &JoystickWidget::moved, this, &ControlPanel::onAngJoyMoved);
 
-  connect(estop, &QPushButton::clicked, controller_.get(),
-          &RobotController::emergencyStop);
+  // 急停必须走 emitCombined():直接调 emergencyStop() 的话,重发定时器
+  // 下一拍又会把「最后那个非零速度」发出去,车停不下来。
+  connect(estop, &QPushButton::clicked, this, [this]() {
+    key_lin_x_ = key_lin_y_ = key_ang_z_ = 0.0;
+    joy_lin_x_ = joy_lin_y_ = joy_ang_z_ = 0.0;
+    controller_->emergencyStop();   // 立刻补一条 0
+    emitCombined();                 // 状态归零 → 停掉重发
+  });
+
+  // 遥操作重发:10 Hz 重发最近一次合成速度,直到归零。
+  stream_timer_ = new QTimer(this);
+  stream_timer_->setInterval(100);
+  connect(stream_timer_, &QTimer::timeout, this, [this]() {
+    controller_->publishFullVelocity(last_lin_x_, last_lin_y_, last_ang_z_);
+  });
 }
 
 void ControlPanel::onLinJoyMoved(double x, double y) {
@@ -84,7 +99,19 @@ void ControlPanel::emitCombined() {
   const double lin_y = std::clamp(key_lin_y_ + joy_lin_y_, -1.0, 1.0) * max_lin_;
   const double ang_z = std::clamp(key_ang_z_ + joy_ang_z_, -1.0, 1.0) * max_ang_;
 
+  last_lin_x_ = lin_x;
+  last_lin_y_ = lin_y;
+  last_ang_z_ = ang_z;
+
   controller_->publishFullVelocity(lin_x, lin_y, ang_z);
+
+  // 非零 → 起重发;归零 → 停发(刚发出去的那条 0 就是停止指令)。
+  if (stream_timer_) {
+    const bool active = std::abs(lin_x) + std::abs(lin_y) + std::abs(ang_z) > 1e-6;
+    if (active && !stream_timer_->isActive())       stream_timer_->start();
+    else if (!active && stream_timer_->isActive())  stream_timer_->stop();
+  }
+
   if (speed_) {
     speed_->setLinearSpeed(lin_x);
     speed_->setAngularSpeed(ang_z);

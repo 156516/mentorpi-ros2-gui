@@ -20,6 +20,19 @@ FROM osrf/ros:humble-desktop
 # Avoid apt-get prompts during build.
 ENV DEBIAN_FRONTEND=noninteractive
 
+# 国内网络下官方源基本不可用:packages.ros.org 实测 8 秒 0 字节(连不上),
+# archive.ubuntu.com 只有 ~70 KB/s。全部换成清华镜像(实测 3.5~16 MB/s),
+# 106 MB 依赖约 30 秒下完。要还原官方源,删掉这一段即可。
+# 注意 ROS 源是 deb822 格式(ros2.sources,不是 .list),签名由上游 key 同步,
+# 换 host 后 Signed-By 仍然有效。
+RUN sed -i 's|archive.ubuntu.com|mirrors.tuna.tsinghua.edu.cn|g; \
+            s|security.ubuntu.com|mirrors.tuna.tsinghua.edu.cn|g' \
+        /etc/apt/sources.list \
+ && for f in /etc/apt/sources.list.d/*; do \
+      sed -i -e 's|packages.ros.org/ros2|mirrors.tuna.tsinghua.edu.cn/ros2|g' \
+             -e 's|^Types: deb deb-src|Types: deb|' "$f"; \
+    done
+
 # Qt5 + our GUI deps + slam_toolbox + map_server.
 # (sensor_msgs / nav_msgs etc. come from ros-humble-desktop already.)
 RUN apt-get update && apt-get install -y --no-install-recommends \

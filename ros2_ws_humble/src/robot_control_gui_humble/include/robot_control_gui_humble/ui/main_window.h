@@ -11,6 +11,7 @@ class QPushButton;
 class QLabel;
 class QStackedWidget;
 class QWidget;
+class QHBoxLayout;
 #include "robot_control_gui_humble/ui/speed_dashboard.h"
 
 namespace rcj {
@@ -72,6 +73,12 @@ private:
   QLabel*      ip_label_{nullptr};
   QWidget*     placeholder_{nullptr};   // shown when disconnected
   QStackedWidget* body_stack_{nullptr}; // placeholder <-> tabs+view
+  // 连接页中央那格(页签列 : 地图视图 = 3 : 2)。存成成员是为了断开→重连时
+  // 能可靠地换掉地图视图 —— 以前用「布局 item 数 >= 2」判断,断开删视图后
+  // Qt 会自动摘掉该 item,count 变 1,重连时就再也不建视图了(右侧空白)。
+  QWidget*     center_page_{nullptr};
+  QHBoxLayout* center_lay_{nullptr};
+  QWidget*     view_placeholder_{nullptr};
 
   // Live robot controller (null until connected)
   std::shared_ptr<RobotController> controller_;
@@ -90,6 +97,16 @@ private:
   QComboBox*      robot_selector_{nullptr};
   QLineEdit*      namespace_edit_{nullptr};
   int             ui_tick_timer_{0};
+
+  // 图层保鲜:代价地图/粒子云是 Nav2 和 AMCL 在「持续」发布的,停了就再也没有
+  // 下一帧 —— 于是最后一帧永远糊在地图上,看着像 Nav2 还在跑。
+  // 这里记下每类消息最后一次到达的时刻,超时(见 kLayerStaleMs)就当作对端没了,
+  // 把该层清掉。0 = 从没收到过,不用清。
+  // 注:路径(/plan)不参与保鲜 —— Nav2 只在规划的那一下发一次,不是周期发布,
+  // 按超时清会把正在走的绿线在中途抹掉。
+  qint64 last_global_costmap_ms_{0};
+  qint64 last_local_costmap_ms_{0};
+  qint64 last_particle_ms_{0};
 
   QMap<int, bool> key_states_;
   double max_linear_{0.5};
